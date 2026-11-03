@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Manajemen UMKM</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- React & ReactDOM CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel Standalone for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0f3fa',
+                            100: '#dbe2f1',
+                            200: '#bbc7e4',
+                            300: '#91a4d3',
+                            400: '#697dc0',
+                            500: '#4e5fae',
+                            600: '#3e4b95',
+                            700: '#343d7c',
+                            800: '#2E3A68', // Deep Blue Theme Color
+                            900: '#262f55',
+                            950: '#191f3a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f0f3fa;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #2E3A68;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #191f3a;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen text-slate-800 antialiased selection:bg-brand-200 selection:text-brand-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // Default Data
+        const INITIAL_PROFILE = {
+            name: "Blue Brew & Snacks",
+            tagline: "Gen Z Coffee & Snack Corner",
+            logo: "https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=300&q=80"
+        };
+
+        const INITIAL_MENUS = [
+            {
+                id: 1,
+                name: "Kopi Susu Blue Aren",
+                category: "Kopi",
+                hpp: 9000,
+                price: 18000,
+                stock: 45,
+                minStock: 10,
+                image: "https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&w=600&q=80",
+                recipe: "Espresso, Milk, Gula Aren"
+            },
+            {
+                id: 2,
+                name: "Iced Americano Blue",
+                category: "Kopi",
+                hpp: 6000,
+                price: 15000,
+                stock: 30,
+                minStock: 8,
+                image: "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=600&q=80",
+                recipe: "Double Shot Espresso, Water, Ice"
+            },
+            {
+                id: 3,
+                name: "Croissant Butter",
+                category: "Snack",
+                hpp: 11000,
+                price: 20000,
+                stock: 12,
+                minStock: 5,
+                image: "https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=600&q=80",
+                recipe: "Butter Croissant"
+            }
+        ];
+
+        const INITIAL_TRANSACTIONS = [
+            {
+                id: "TRX-1001",
+                date: new Date(Date.now() - 3600000 * 2).toISOString(),
+                items: [{ id: 1, name: "Kopi Susu Blue Aren", price: 18000, hpp: 9000, qty: 2 }],
+                discountType: "percent",
+                discountValue: 10,
+                discountAmount: 3600,
+                subtotal: 36000,
+                total: 32400,
+                cashPaid: 50000,
+                changePaid: 17600,
+                paymentMethod: "Tunai"
+            }
+        ];
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('dashboard');
+            
+            const [scriptUrl, setScriptUrl] = useState(() => {
+                return localStorage.getItem('umkm_script_url') || '';
+            });
+
+            const [profile, setProfile] = useState(() => {
+                const saved = localStorage.getItem('umkm_profile');
+                return saved ? JSON.parse(saved) : INITIAL_PROFILE;
+            });
+            const [menus, setMenus] = useState(() => {
+                const saved = localStorage.getItem('umkm_menus');
+                return saved ? JSON.parse(saved) : INITIAL_MENUS;
+            });
+            const [transactions, setTransactions] = useState(() => {
+                const saved = localStorage.getItem('umkm_transactions');
+                return saved ? JSON.parse(saved) : INITIAL_TRANSACTIONS;
+            });
+            
+            const [toast, setToast] = useState(null);
+            const [isSyncing, setIsSyncing] = useState(false);
+            const [isLoadingCloud, setIsLoadingCloud] = useState(false);
+
+            // JWT Auth State
+            const [backendUrl, setBackendUrl] = useState(() => localStorage.getItem('jwt_backend_url') || 'http://localhost:5000');
+            const [userToken, setUserToken] = useState(() => localStorage.getItem('jwt_token') || null);
+            const [userEmail, setUserEmail] = useState(() => localStorage.getItem('jwt_user_email') || null);
+            const [authModal, setAuthModal] = useState({ isOpen: false, isRegister: false, email: '', password: '' });
+
+            // AUTO-FETCH DARI GOOGLE SHEETS SAAT APLIKASI DIBUKA DI HP / LAPTOP
+            useEffect(() => {
+                if (scriptUrl) {
+                    fetchCloudData();
+                }
+            }, [scriptUrl]);
+
+            const fetchCloudData = async () => {
+                if (!scriptUrl) return;
+                setIsLoadingCloud(true);
+                try {
+                    const res = await fetch(`${scriptUrl}?action=loadData`);
+                    const data = await res.json();
+                    if (data && data.status === "success") {
+                        if (data.menus && data.menus.length > 0) {
+                            setMenus(data.menus);
+                            localStorage.setItem('umkm_menus', JSON.stringify(data.menus));
+                        }
+                        if (data.profile && data.profile.name) {
+                            setProfile(prev => ({ ...prev, ...data.profile }));
+                        }
+                        showToast('Data disinkronkan dari Google Sheets! ⚡');
+                    }
+                } catch (err) {
+                    console.log("Auto-load failed, using local storage backup.", err);
+                } finally {
+                    setIsLoadingCloud(false);
+                }
+            };
+
+            useEffect(() => {
+                localStorage.setItem('umkm_profile', JSON.stringify(profile));
+            }, [profile]);
+
+            useEffect(() => {
+                localStorage.setItem('umkm_script_url', scriptUrl);
+            }, [scriptUrl]);
+
+            useEffect(() => {
+                localStorage.setItem('umkm_menus', JSON.stringify(menus));
+            }, [menus]);
+
+            useEffect(() => {
+                localStorage.setItem('umkm_transactions', JSON.stringify(transactions));
+            }, [transactions]);
+
+            const showToast = (message, type = 'success') => {
+                setToast({ message, type });
+                setTimeout(() => setToast(null), 3500);
+            };
+
+            const syncToSpreadsheet = async (overrideMenus, overrideTrx, overrideProfile) => {
+                if (!scriptUrl) return;
+                setIsSyncing(true);
+                try {
+                    const payload = {
+                        profile: overrideProfile || profile,
+                        menus: overrideMenus || menus,
+                        transactions: overrideTrx || transactions
+                    };
+                    await fetch(scriptUrl, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } catch (err) {
+                    console.error("Gagal kirim ke Google Sheets", err);
+                } finally {
+                    setIsSyncing(false);
+                }
+            };
+
+            const updateMenusState = (newMenus) => {
+                setMenus(newMenus);
+                syncToSpreadsheet(newMenus, null, null);
+            };
+
+            const updateTransactionsState = (newTrx) => {
+                setTransactions(newTrx);
+                syncToSpreadsheet(null, newTrx, null);
+            };
+
+            const updateProfileState = (newProf, newUrl) => {
+                setProfile(newProf);
+                setScriptUrl(newUrl);
+                syncToSpreadsheet(null, null, newProf);
+            };
+
+            const handleAuthSubmit = async (e) => {
+                e.preventDefault();
+                try {
+                    const endpoint = authModal.isRegister ? '/api/register' : '/api/login';
+                    const res = await fetch(`${backendUrl}${endpoint}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: authModal.email, password: authModal.password })
+                    });
+                    const data = await res.json();
+                    if (!data.success) throw new Error(data.message);
+
+                    if (authModal.isRegister) {
+                        showToast('Registrasi berhasil! Silakan login.', 'success');
+                        setAuthModal({ ...authModal, isRegister: false, password: '' });
+                    } else {
+                        setUserToken(data.token);
+                        setUserEmail(data.email);
+                        localStorage.setItem('jwt_token', data.token);
+                        localStorage.setItem('jwt_user_email', data.email);
+                        showToast('Login berhasil! Token JWT tersimpan.', 'success');
+                        setAuthModal({ ...authModal, isOpen: false, password: '' });
+                    }
+                } catch (err) {
+                    showToast(err.message, 'error');
+                }
+            };
+
+            const handleLogout = () => {
+                setUserToken(null);
+                setUserEmail(null);
+                localStorage.removeItem('jwt_token');
+                localStorage.removeItem('jwt_user_email');
+                showToast('Kamu telah logout.');
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col bg-slate-50">
+                    {/* Toast Notification */}
+                    {toast && (
+                        <div className="fixed top-5 right-5 z-50 animate-bounce">
+                            <div className={`px-5 py-3 rounded-2xl shadow-xl text-white font-medium flex items-center gap-3 ${
+                                toast.type === 'error' ? 'bg-rose-600' : 'bg-brand-800'
+                            }`}>
+                                <span>{toast.type === 'error' ? '⚠️' : '✨'}</span>
+                                <span>{toast.message}</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Navigation Header */}
+                    <header className="bg-white sticky top-0 z-40 border-b border-slate-200 shadow-sm">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div className="flex justify-between h-20 items-center">
+                                {/* Brand Logo */}
+                                <div className="flex items-center gap-3">
+                                    <img
+                                        src={profile.logo}
+                                        alt={profile.name}
+                                        className="w-12 h-12 rounded-2xl object-cover shadow-md ring-2 ring-brand-800"
+                                        onError={(e) => { e.target.src = "https://images.unsplash.com/photo-1509042239860-f550ce710b93?auto=format&fit=crop&w=300&q=80"; }}
+                                    />
+                                    <div>
+                                        <h1 className="text-xl font-extrabold tracking-tight text-brand-800">{profile.name}</h1>
+                                        <p className="text-xs font-medium text-slate-500">{profile.tagline}</p>
+                                    </div>
+                                </div>
+
+                                {/* Desktop Navigation */}
+                                <nav className="hidden md:flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+                                    <button
+                                        onClick={() => setActiveTab('dashboard')}
+                                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 ${
+                                            activeTab === 'dashboard' ? 'bg-brand-800 text-white shadow-md' : 'text-slate-700 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        📊 Dashboard
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab('menu')}
+                                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 relative ${
+                                            activeTab === 'menu' ? 'bg-brand-800 text-white shadow-md' : 'text-slate-700 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        ☕ Menu & Stok
+                                        {menus.some(m => m.stock <= m.minStock) && (
+                                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-rose-500 rounded-full ring-2 ring-white animate-pulse"></span>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab('pos')}
+                                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 ${
+                                            activeTab === 'pos' ? 'bg-brand-800 text-white shadow-md' : 'text-slate-700 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        🛒 Kasir (POS)
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab('profile')}
+                                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 ${
+                                            activeTab === 'profile' ? 'bg-brand-800 text-white shadow-md' : 'text-slate-700 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        ⚙️ Profil & Server JWT
+                                    </button>
+                                </nav>
+
+                                {/* User Auth JWT & Sync Section */}
+                                <div className="flex items-center gap-3">
+                                    {userToken ? (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl hidden sm:inline">
+                                                🔑 {userEmail}
+                                            </span>
+                                            <button
+                                                onClick={handleLogout}
+                                                className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs px-3 py-2 rounded-xl transition-all"
+                                            >
+                                                Logout
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => setAuthModal({ ...authModal, isOpen: true, isRegister: false })}
+                                            className="bg-brand-800 hover:bg-brand-900 text-white font-bold text-xs px-4 py-2.5 rounded-2xl shadow-sm transition-all flex items-center gap-1.5"
+                                        >
+                                            <span>🔑 Login JWT</span>
+                                        </button>
+                                    )}
+
+                                    <button
+                                        onClick={() => syncToSpreadsheet()}
+                                        disabled={isSyncing}
+                                        className="hidden sm:flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-2xl transition-all shadow-sm"
+                                    >
+                                        <span>{isSyncing ? '⏳ Syncing...' : '📊 Sync Spreadsheet'}</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Mobile Navigation */}
+                        <div className="md:hidden flex border-t border-slate-200 bg-white">
+                            <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-3 text-center text-xs font-bold ${activeTab === 'dashboard' ? 'bg-brand-800 text-white' : 'text-slate-600'}`}>📊 Stats</button>
+                            <button onClick={() => setActiveTab('menu')} className={`flex-1 py-3 text-center text-xs font-bold border-x border-slate-200 ${activeTab === 'menu' ? 'bg-brand-800 text-white' : 'text-slate-600'}`}>☕ Menu</button>
+                            <button onClick={() => setActiveTab('pos')} className={`flex-1 py-3 text-center text-xs font-bold ${activeTab === 'pos' ? 'bg-brand-800 text-white' : 'text-slate-600'}`}>🛒 Kasir</button>
+                            <button onClick={() => setActiveTab('profile')} className={`flex-1 py-3 text-center text-xs font-bold border-l border-slate-200 ${activeTab === 'profile' ? 'bg-brand-800 text-white' : 'text-slate-600'}`}>⚙️ Profil</button>
+                        </div>
+                    </header>
+
+                    {/* Body */}
+                    <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                        {isLoadingCloud && (
+                            <div className="mb-4 bg-brand-50 text-brand-800 p-3 rounded-2xl text-xs font-bold flex items-center gap-2 animate-pulse">
+                                <span>⏳</span> Menyarad data terbaru dari Google Sheets...
+                            </div>
+                        )}
+                        {activeTab === 'dashboard' && <DashboardTab menus={menus} transactions={transactions} profile={profile} />}
+                        {activeTab === 'menu' && <MenuTab menus={menus} setMenus={updateMenusState} showToast={showToast} />}
+                        {activeTab === 'pos' && <PosTab menus={menus} setMenus={updateMenusState} transactions={transactions} setTransactions={updateTransactionsState} showToast={showToast} />}
+                        {activeTab === 'profile' && <ProfileTab profile={profile} scriptUrl={scriptUrl} backendUrl={backendUrl} setBackendUrl={setBackendUrl} updateProfileState={updateProfileState} showToast={showToast} syncToSpreadsheet={syncToSpreadsheet} isSyncing={isSyncing} userToken={userToken} setAuthModal={setAuthModal} />}
+                    </main>
+
+                    {/* Login / Register JWT Modal */}
+                    {authModal.isOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                            <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl relative">
+                                <button
+                                    onClick={() => setAuthModal({ ...authModal, isOpen: false })}
+                                    className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-bold"
+                                >
+                                    ✕
+                                </button>
+                                <h3 className="text-xl font-extrabold text-brand-800 mb-1">
+                                    {authModal.isRegister ? '📝 Register Account (JWT Auth)' : '🔑 Login JWT (Custom Backend)'}
+                                </h3>
+                                <p className="text-xs text-slate-500 mb-6">
+                                    {authModal.isRegister 
+                                        ? 'Password di-hash bcrypt di backend & otentikasi menggunakan token JWT.' 
+                                        : 'Sistem login mandiri tanpa ketergantungan pihak ketiga!'}
+                                </p>
+
+                                <form onSubmit={handleAuthSubmit} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Email</label>
+                                        <input
+                                            type="email"
+                                            required
+                                            placeholder="pemilik.kopi@gmail.com"
+                                            value={authModal.email}
+                                            onChange={(e) => setAuthModal({ ...authModal, email: e.target.value })}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-800"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Password</label>
+                                        <input
+                                            type="password"
+                                            required
+                                            placeholder="••••••••"
+                                            value={authModal.password}
+                                            onChange={(e) => setAuthModal({ ...authModal, password: e.target.value })}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-800"
+                                        />
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        className="w-full py-3.5 rounded-2xl bg-brand-800 text-white font-extrabold text-sm shadow-lg hover:bg-brand-900 transition-all mt-2"
+                                    >
+                                        {authModal.isRegister ? 'Daftar (Bcrypt Hash)' : 'Login & Ambil JWT Token'}
+                                    </button>
+
+                                    <div className="text-center pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setAuthModal({ ...authModal, isRegister: !authModal.isRegister })}
+                                            className="text-xs font-bold text-brand-800 hover:underline"
+                                        >
+                                            {authModal.isRegister ? 'Sudah punya akun? Login JWT' : 'Belum punya akun? Register'}
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Footer */}
+                    <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 font-medium">
+                        <p>© 2026 {profile.name} — Aplikasi Kasir UMKM (JWT Auth & Bcrypt) ☕✨</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        // ==================== DASHBOARD TAB ====================
+        function DashboardTab({ menus, transactions, profile }) {
+            const now = new Date();
+            const todayStr = now.toDateString();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+
+            // Daily Stats
+            const todayTransactions = transactions.filter(t => new Date(t.date).toDateString() === todayStr);
+            const todayRevenue = todayTransactions.reduce((acc, t) => acc + t.total, 0);
+            const todayItemsSold = todayTransactions.reduce((acc, t) => acc + t.items.reduce((sum, item) => sum + item.qty, 0), 0);
+
+            // Monthly Stats
+            const monthlyTransactions = transactions.filter(t => {
+                const d = new Date(t.date);
+                return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+            });
+            const monthlyRevenue = monthlyTransactions.reduce((acc, t) => acc + t.total, 0);
+            const monthlyCOGS = monthlyTransactions.reduce((acc, t) => {
+                return acc + t.items.reduce((sum, item) => sum + ((item.hpp || 0) * item.qty), 0);
+            }, 0);
+            const monthlyGrossProfit = monthlyRevenue - monthlyCOGS;
+
+            const lowStockItems = menus.filter(m => m.stock <= m.minStock);
+
+            const itemCounts = {};
+            transactions.forEach(t => {
+                t.items.forEach(item => {
+                    itemCounts[item.name] = (itemCounts[item.name] || 0) + item.qty;
+                });
+            });
+
+            const bestSellers = Object.entries(itemCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5);
+
+            return (
+                <div className="space-y-8">
+                    {/* Welcome Banner */}
+                    <div className="bg-brand-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+                        <div className="relative z-10">
+                            <span className="bg-brand-700 text-brand-100 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider">
+                                Dashboard & Laporan Keuangan 🚀
+                            </span>
+                            <h2 className="text-2xl sm:text-3xl font-extrabold mt-3">Halo, Owner {profile.name}! ✨</h2>
+                            <p className="text-brand-100 text-sm sm:text-base mt-1 max-w-2xl">
+                                Pantau omzet harian & bulanan, HPP produk, serta keuntungan kotor usaha kamu secara realtime.
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Low Stock Warning */}
+                    {lowStockItems.length > 0 && (
+                        <div className="bg-rose-50 border border-rose-200 rounded-3xl p-5 shadow-sm flex items-start gap-4">
+                            <div className="p-3 bg-rose-600 text-white rounded-2xl text-xl shadow-md">
+                                ⚠️
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-rose-900 font-bold text-base">Peringatan Stok Menipis!</h3>
+                                <p className="text-rose-700 text-sm mt-0.5">
+                                    Stok menu berikut hampir habis: <span className="font-semibold">{lowStockItems.map(m => m.name).join(', ')}</span>.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Stats Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Omzet Hari Ini</span>
+                            <h4 className="text-2xl font-extrabold text-brand-800 mt-2">
+                                Rp {todayRevenue.toLocaleString('id-ID')}
+                            </h4>
+                            <p className="text-xs text-emerald-600 font-semibold mt-1">📈 {todayTransactions.length} transaksi hari ini</p>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Omzet Bulan Ini</span>
+                            <h4 className="text-2xl font-extrabold text-brand-800 mt-2">
+                                Rp {monthlyRevenue.toLocaleString('id-ID')}
+                            </h4>
+                            <p className="text-xs text-emerald-600 font-semibold mt-1">🗓️ {monthlyTransactions.length} transaksi bulan ini</p>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Estimasi Laba Kotor Bulan Ini</span>
+                            <h4 className="text-2xl font-extrabold text-emerald-600 mt-2">
+                                Rp {monthlyGrossProfit.toLocaleString('id-ID')}
+                            </h4>
+                            <p className="text-xs text-slate-500 font-semibold mt-1">Total HPP: Rp {monthlyCOGS.toLocaleString('id-ID')}</p>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Terjual Hari Ini</span>
+                            <h4 className="text-2xl font-extrabold text-brand-800 mt-2">
+                                {todayItemsSold} Porsi
+                            </h4>
+                            <p className="text-xs text-slate-500 font-semibold mt-1">Kopi & Snack</p>
+                        </div>
+                    </div>
+
+                    {/* Best Sellers & Recent Transactions */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
+                            <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+                                🔥 Top Menu Terlaris
+                            </h3>
+                            {bestSellers.length === 0 ? (
+                                <p className="text-slate-400 text-sm py-4">Belum ada transaksi.</p>
+                            ) : (
+                                <div className="space-y-4">
+                                    {bestSellers.map(([name, count], index) => (
+                                        <div key={name} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                                            <span className="font-bold text-slate-800 text-sm">{index + 1}. {name}</span>
+                                            <span className="font-extrabold text-brand-800">{count} Porsi</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
+                            <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+                                🧾 Riwayat Transaksi Terakhir
+                            </h3>
+                            {transactions.length === 0 ? (
+                                <p className="text-slate-400 text-sm py-4">Belum ada transaksi.</p>
+                            ) : (
+                                <div className="space-y-4">
+                                    {transactions.slice(0, 5).map(trx => (
+                                        <div key={trx.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-slate-900 text-sm">{trx.id}</span>
+                                                    {trx.discountAmount > 0 && (
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 font-bold">
+                                                            Diskon -Rp {trx.discountAmount.toLocaleString('id-ID')}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-slate-500 mt-1">
+                                                    {trx.items.map(i => `${i.qty}x ${i.name}`).join(', ')}
+                                                </p>
+                                            </div>
+                                            <span className="font-extrabold text-brand-800 text-base">Rp {trx.total.toLocaleString('id-ID')}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ==================== MENU & STOK TAB ====================
+        function MenuTab({ menus, setMenus, showToast }) {
+            const [filterCategory, setFilterCategory] = useState('Semua');
+            const [searchQuery, setSearchQuery] = useState('');
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [editingMenu, setEditingMenu] = useState(null);
+            const [deleteConfirmMenu, setDeleteConfirmMenu] = useState(null);
+
+            const [formData, setFormData] = useState({
+                name: '',
+                category: 'Kopi',
+                hpp: '',
+                price: '',
+                stock: '',
+                minStock: '5',
+                image: '',
+                recipe: ''
+            });
+
+            const categories = ['Semua', 'Kopi', 'Non-Kopi', 'Snack'];
+
+            const filteredMenus = menus.filter(m => {
+                const matchesCategory = filterCategory === 'Semua' || m.category === filterCategory;
+                const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase());
+                return matchesCategory && matchesSearch;
+            });
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setFormData({ ...formData, image: reader.result });
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handleOpenAddModal = () => {
+                setEditingMenu(null);
+                setFormData({
+                    name: '',
+                    category: 'Kopi',
+                    hpp: '',
+                    price: '',
+                    stock: '',
+                    minStock: '5',
+                    image: 'https://images.unsplash.com/photo-1541167760496-1628856ab772?auto=format&fit=crop&w=600&q=80',
+                    recipe: ''
+                });
+                setIsModalOpen(true);
+            };
+
+            const handleOpenEditModal = (menu) => {
+                setEditingMenu(menu);
+                setFormData({
+                    name: menu.name,
+                    category: menu.category,
+                    hpp: menu.hpp || 0,
+                    price: menu.price,
+                    stock: menu.stock,
+                    minStock: menu.minStock || 5,
+                    image: menu.image,
+                    recipe: menu.recipe || ''
+                });
+                setIsModalOpen(true);
+            };
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!formData.name || !formData.price || !formData.stock) {
+                    showToast('Harap lengkapi form menu!', 'error');
+                    return;
+                }
+
+                if (editingMenu) {
+                    setMenus(menus.map(m => m.id === editingMenu.id ? {
+                        ...m,
+                        name: formData.name,
+                        category: formData.category,
+                        hpp: Number(formData.hpp || 0),
+                        price: Number(formData.price),
+                        stock: Number(formData.stock),
+                        minStock: Number(formData.minStock),
+                        image: formData.image,
+                        recipe: formData.recipe
+                    } : m));
+                    showToast(`Menu "${formData.name}" berhasil diperbarui!`);
+                } else {
+                    const newMenu = {
+                        id: Date.now(),
+                        name: formData.name,
+                        category: formData.category,
+                        hpp: Number(formData.hpp || 0),
+                        price: Number(formData.price),
+                        stock: Number(formData.stock),
+                        minStock: Number(formData.minStock),
+                        image: formData.image,
+                        recipe: formData.recipe
+                    };
+                    setMenus([newMenu, ...menus]);
+                    showToast(`Menu "${formData.name}" berhasil ditambahkan!`);
+                }
+                setIsModalOpen(false);
+            };
+
+            const confirmDeleteMenu = () => {
+                if (deleteConfirmMenu) {
+                    setMenus(menus.filter(m => m.id !== deleteConfirmMenu.id));
+                    showToast(`Menu "${deleteConfirmMenu.name}" telah dihapus.`);
+                    setDeleteConfirmMenu(null);
+                }
+            };
+
+            const handleQuickStockChange = (id, delta) => {
+                setMenus(menus.map(m => {
+                    if (m.id === id) {
+                        return { ...m, stock: Math.max(0, m.stock + delta) };
+                    }
+                    return m;
+                }));
+            };
+
+            return (
+                <div className="space-y-8">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                        <div>
+                            <h2 className="text-xl font-extrabold text-brand-800">Manajemen Menu, Stok & HPP ☕</h2>
+                            <p className="text-xs text-slate-500 mt-1">Tambah foto dari galeri HP/Laptop, hitung HPP & keuntungan produk.</p>
+                        </div>
+                        <button
+                            onClick={handleOpenAddModal}
+                            className="bg-brand-800 hover:bg-brand-900 text-white font-bold px-6 py-3 rounded-2xl shadow-lg transition-all text-sm"
+                        >
+                            ➕ Tambah Menu Baru
+                        </button>
+                    </div>
+
+                    <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto">
+                            {categories.map(cat => (
+                                <button
+                                    key={cat}
+                                    onClick={() => setFilterCategory(cat)}
+                                    className={`px-5 py-2.5 rounded-2xl font-bold text-xs transition-all ${
+                                        filterCategory === cat
+                                            ? 'bg-brand-800 text-white shadow-md'
+                                            : 'bg-white text-brand-800 border border-slate-200 hover:bg-slate-100'
+                                    }`}
+                                >
+                                    {cat}
+                                </button>
+                            ))}
+                        </div>
+
+                        <input
+                            type="text"
+                            placeholder="Cari nama menu..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full md:w-80 bg-white border border-slate-200 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-800"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredMenus.map(menu => (
+                            <div key={menu.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col justify-between">
+                                <div>
+                                    <div className="relative h-48 bg-slate-100">
+                                        <img src={menu.image} alt={menu.name} className="w-full h-full object-cover" />
+                                        <span className="absolute top-3 left-3 bg-white/90 font-bold text-xs px-3 py-1 rounded-full shadow-sm text-brand-800">
+                                            {menu.category}
+                                        </span>
+                                    </div>
+                                    <div className="p-5">
+                                        <div className="flex justify-between items-start">
+                                            <h3 className="font-extrabold text-slate-900 text-base">{menu.name}</h3>
+                                            <span className="font-black text-brand-800 text-base">Rp {menu.price.toLocaleString('id-ID')}</span>
+                                        </div>
+                                        <div className="mt-2 flex items-center justify-between text-xs bg-slate-50 p-2 rounded-xl">
+                                            <span className="text-slate-500 font-semibold">HPP: Rp {(menu.hpp || 0).toLocaleString('id-ID')}</span>
+                                            <span className="text-emerald-700 font-bold">Margin: Rp {(menu.price - (menu.hpp || 0)).toLocaleString('id-ID')}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-2">Resep: {menu.recipe || '-'}</p>
+                                    </div>
+                                </div>
+
+                                <div className="p-5 pt-0 border-t border-slate-100 mt-4 flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-2xl">
+                                        <button onClick={() => handleQuickStockChange(menu.id, -1)} className="w-6 h-6 rounded-lg bg-white font-black text-xs text-brand-800 shadow-sm">-</button>
+                                        <span className="w-8 text-center font-bold text-xs">{menu.stock}</span>
+                                        <button onClick={() => handleQuickStockChange(menu.id, 1)} className="w-6 h-6 rounded-lg bg-white font-black text-xs text-brand-800 shadow-sm">+</button>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => handleOpenEditModal(menu)} className="p-2 rounded-xl bg-slate-100 text-brand-800 text-xs font-bold">✏️ Edit</button>
+                                        <button onClick={() => setDeleteConfirmMenu(menu)} className="p-2 rounded-xl bg-rose-50 text-rose-600 text-xs font-bold">🗑️</button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Delete Modal Confirmation */}
+                    {deleteConfirmMenu && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl text-center">
+                                <span className="text-4xl block mb-2">🗑️</span>
+                                <h3 className="text-lg font-extrabold text-slate-900">Hapus Menu ini?</h3>
+                                <p className="text-xs text-slate-500 mt-1">Yakin ingin menghapus <strong>"{deleteConfirmMenu.name}"</strong>? Tindakan ini tidak dapat dibatalkan.</p>
+                                <div className="flex items-center justify-center gap-3 mt-6">
+                                    <button onClick={() => setDeleteConfirmMenu(null)} className="px-5 py-2.5 rounded-2xl text-xs font-bold text-slate-600 bg-slate-100">Batal</button>
+                                    <button onClick={confirmDeleteMenu} className="px-5 py-2.5 rounded-2xl text-xs font-bold text-white bg-rose-600 shadow-md">Ya, Hapus</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Add / Edit Modal */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                            <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+                                <h3 className="text-xl font-extrabold text-slate-900 mb-4">
+                                    {editingMenu ? '✏️ Edit Menu' : '➕ Tambah Menu Baru'}
+                                </h3>
+
+                                <form onSubmit={handleSubmit} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Nama Menu</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={formData.name}
+                                            onChange={(e) => setFormData({...formData, name: e.target.value})}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-800"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Kategori</label>
+                                            <select
+                                                value={formData.category}
+                                                onChange={(e) => setFormData({...formData, category: e.target.value})}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-3 py-3 text-sm"
+                                            >
+                                                <option value="Kopi">Kopi</option>
+                                                <option value="Non-Kopi">Non-Kopi</option>
+                                                <option value="Snack">Snack</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">HPP (Modal)</label>
+                                            <input
+                                                type="number"
+                                                required
+                                                value={formData.hpp}
+                                                onChange={(e) => setFormData({...formData, hpp: e.target.value})}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-800"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Harga Jual</label>
+                                            <input
+                                                type="number"
+                                                required
+                                                value={formData.price}
+                                                onChange={(e) => setFormData({...formData, price: e.target.value})}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-800"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Stok Awal</label>
+                                            <input
+                                                type="number"
+                                                required
+                                                value={formData.stock}
+                                                onChange={(e) => setFormData({...formData, stock: e.target.value})}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-800"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Min. Stok Warning</label>
+                                            <input
+                                                type="number"
+                                                required
+                                                value={formData.minStock}
+                                                onChange={(e) => setFormData({...formData, minStock: e.target.value})}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-800"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Upload Foto Menu dari Galeri HP/Laptop</label>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={handleFileUpload}
+                                            className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-brand-800 file:text-white hover:file:bg-brand-900 cursor-pointer"
+                                        />
+                                        {formData.image && (
+                                            <div className="mt-2 h-20 w-20 rounded-xl overflow-hidden border">
+                                                <img src={formData.image} className="w-full h-full object-cover" />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Resep / Catatan Bahan</label>
+                                        <textarea
+                                            rows="2"
+                                            value={formData.recipe}
+                                            onChange={(e) => setFormData({...formData, recipe: e.target.value})}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-800"
+                                        ></textarea>
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                                        <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 rounded-2xl text-sm font-bold text-slate-500">Batal</button>
+                                        <button type="submit" className="px-6 py-2.5 rounded-2xl bg-brand-800 text-white text-sm font-bold shadow-md">Simpan Menu</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // ==================== KASIR (POS) TAB WITH DISCOUNT & CASH CHANGE ====================
+        function PosTab({ menus, setMenus, transactions, setTransactions, showToast }) {
+            const [cart, setCart] = useState([]);
+            const [paymentMethod, setPaymentMethod] = useState('Tunai');
+            const [discountType, setDiscountType] = useState('percent');
+            const [discountValue, setDiscountValue] = useState(0);
+            const [cashPaid, setCashPaid] = useState('');
+            const [searchTerm, setSearchTerm] = useState('');
+
+            const filteredMenus = menus.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+            const addToCart = (menu) => {
+                if (menu.stock <= 0) {
+                    showToast(`Stok "${menu.name}" habis!`, 'error');
+                    return;
+                }
+
+                const existing = cart.find(item => item.id === menu.id);
+                if (existing) {
+                    if (existing.qty >= menu.stock) {
+                        showToast(`Stok "${menu.name}" tidak mencukupi!`, 'error');
+                        return;
+                    }
+                    setCart(cart.map(item => item.id === menu.id ? { ...item, qty: item.qty + 1 } : item));
+                } else {
+                    setCart([...cart, { id: menu.id, name: menu.name, price: menu.price, hpp: menu.hpp || 0, qty: 1 }]);
+                }
+            };
+
+            const updateCartQty = (id, delta) => {
+                const menuObj = menus.find(m => m.id === id);
+                setCart(cart.map(item => {
+                    if (item.id === id) {
+                        const newQty = item.qty + delta;
+                        if (newQty > menuObj.stock) {
+                            showToast(`Stok maksimal tersisa ${menuObj.stock}`, 'error');
+                            return item;
+                        }
+                        return newQty > 0 ? { ...item, qty: newQty } : null;
+                    }
+                    return item;
+                }).filter(Boolean));
+            };
+
+            const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+            
+            const discountAmount = useMemo(() => {
+                if (discountType === 'percent') {
+                    return Math.round((subtotal * (Number(discountValue) / 100)));
+                } else {
+                    return Math.min(subtotal, Number(discountValue) || 0);
+                }
+            }, [subtotal, discountType, discountValue]);
+
+            const cartTotal = Math.max(0, subtotal - discountAmount);
+            const numericCashPaid = Number(cashPaid) || 0;
+            const changePaid = paymentMethod === 'Tunai' ? Math.max(0, numericCashPaid - cartTotal) : 0;
+
+            const handleCheckout = () => {
+                if (cart.length === 0) {
+                    showToast('Keranjang masih kosong!', 'error');
+                    return;
+                }
+
+                if (paymentMethod === 'Tunai' && numericCashPaid < cartTotal) {
+                    showToast('Uang tunai yang dibayar kurang!', 'error');
+                    return;
+                }
+
+                const updatedMenus = menus.map(menu => {
+                    const cartItem = cart.find(ci => ci.id === menu.id);
+                    if (cartItem) {
+                        return { ...menu, stock: Math.max(0, menu.stock - cartItem.qty) };
+                    }
+                    return menu;
+                });
+                setMenus(updatedMenus);
+
+                const newTrx = {
+                    id: `TRX-${Math.floor(1000 + Math.random() * 9000)}`,
+                    date: new Date().toISOString(),
+                    items: [...cart],
+                    discountType: discountType,
+                    discountValue: Number(discountValue),
+                    discountAmount: discountAmount,
+                    subtotal: subtotal,
+                    total: cartTotal,
+                    cashPaid: paymentMethod === 'Tunai' ? numericCashPaid : cartTotal,
+                    changePaid: changePaid,
+                    paymentMethod: paymentMethod
+                };
+
+                setTransactions([newTrx, ...transactions]);
+                setCart([]);
+                setDiscountValue(0);
+                setCashPaid('');
+                showToast(`Transaksi ${newTrx.id} Berhasil! ${paymentMethod === 'Tunai' ? `Kembalian: Rp ${changePaid.toLocaleString('id-ID')}` : ''}`);
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                    <div className="lg:col-span-7 space-y-6">
+                        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
+                            <h2 className="text-xl font-extrabold text-brand-800">Kasir (POS) ☕</h2>
+                            <input
+                                type="text"
+                                placeholder="Cari menu..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-brand-800"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                            {filteredMenus.map(menu => (
+                                <button
+                                    key={menu.id}
+                                    onClick={() => addToCart(menu)}
+                                    disabled={menu.stock <= 0}
+                                    className={`bg-white rounded-2xl border p-3 text-left transition-all ${
+                                        menu.stock <= 0 ? 'opacity-40 border-rose-200' : 'border-slate-200 hover:border-brand-800'
+                                    }`}
+                                >
+                                    <div className="h-28 rounded-xl overflow-hidden mb-2 bg-slate-100">
+                                        <img src={menu.image} className="w-full h-full object-cover" />
+                                    </div>
+                                    <h4 className="font-extrabold text-slate-900 text-xs line-clamp-1">{menu.name}</h4>
+                                    <p className="font-black text-brand-800 text-xs mt-1">Rp {menu.price.toLocaleString('id-ID')}</p>
+                                    <span className="text-[10px] text-slate-500 font-bold block mt-2">Stok: {menu.stock}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="lg:col-span-5 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between h-fit sticky top-28">
+                        <div>
+                            <h3 className="text-lg font-bold text-slate-900 pb-4 border-b border-slate-100">🛒 Keranjang Pesanan</h3>
+
+                            <div className="divide-y divide-slate-100 max-h-52 overflow-y-auto my-4">
+                                {cart.length === 0 ? (
+                                    <p className="text-center py-8 text-slate-400 text-xs">Keranjang masih kosong.</p>
+                                ) : (
+                                    cart.map(item => (
+                                        <div key={item.id} className="py-3 flex items-center justify-between">
+                                            <div>
+                                                <h4 className="font-bold text-slate-900 text-xs">{item.name}</h4>
+                                                <p className="text-xs text-brand-800 font-semibold">Rp {item.price.toLocaleString('id-ID')}</p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={() => updateCartQty(item.id, -1)} className="w-6 h-6 rounded bg-slate-100 font-bold text-xs text-brand-800">-</button>
+                                                <span className="font-bold text-xs">{item.qty}</span>
+                                                <button onClick={() => updateCartQty(item.id, 1)} className="w-6 h-6 rounded bg-slate-100 font-bold text-xs text-brand-800">+</button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="border-t border-slate-100 pt-4 space-y-4">
+                            <div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-xs font-bold text-slate-700 uppercase">Diskon</label>
+                                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                                        <button
+                                            onClick={() => setDiscountType('percent')}
+                                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${discountType === 'percent' ? 'bg-brand-800 text-white' : 'text-slate-600'}`}
+                                        >
+                                            Persen (%)
+                                        </button>
+                                        <button
+                                            onClick={() => setDiscountType('nominal')}
+                                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold ${discountType === 'nominal' ? 'bg-brand-800 text-white' : 'text-slate-600'}`}
+                                        >
+                                            Nominal (Rp)
+                                        </button>
+                                    </div>
+                                </div>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    placeholder={discountType === 'percent' ? "Contoh: 10 (%)" : "Contoh: 5000 (Rp)"}
+                                    value={discountValue || ''}
+                                    onChange={(e) => setDiscountValue(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-brand-800"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Metode Pembayaran</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {['Tunai', 'QRIS', 'Transfer'].map(method => (
+                                        <button
+                                            key={method}
+                                            onClick={() => setPaymentMethod(method)}
+                                            className={`py-2 rounded-xl text-xs font-bold border ${
+                                                paymentMethod === method ? 'bg-brand-800 text-white border-brand-800' : 'bg-slate-50 text-slate-700 border-slate-200'
+                                            }`}
+                                        >
+                                            {method}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {paymentMethod === 'Tunai' && (
+                                <div className="bg-blue-50/50 p-3 rounded-2xl border border-blue-100 space-y-2">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-brand-800 uppercase mb-1">Uang Tunai Diterima (Rp)</label>
+                                        <input
+                                            type="number"
+                                            placeholder="Contoh: 50000"
+                                            value={cashPaid}
+                                            onChange={(e) => setCashPaid(e.target.value)}
+                                            className="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-800"
+                                        />
+                                    </div>
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="font-bold text-slate-600">Kembalian:</span>
+                                        <span className={`font-extrabold ${numericCashPaid < cartTotal ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                            Rp {changePaid.toLocaleString('id-ID')}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-1">
+                                <div className="flex justify-between text-xs text-slate-500 font-medium">
+                                    <span>Subtotal:</span>
+                                    <span>Rp {subtotal.toLocaleString('id-ID')}</span>
+                                </div>
+                                {discountAmount > 0 && (
+                                    <div className="flex justify-between text-xs text-rose-600 font-semibold">
+                                        <span>Diskon Potongan:</span>
+                                        <span>- Rp {discountAmount.toLocaleString('id-ID')}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between text-base font-black text-brand-800 pt-1 border-t border-slate-200">
+                                    <span>Total Tagihan:</span>
+                                    <span>Rp {cartTotal.toLocaleString('id-ID')}</span>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={handleCheckout}
+                                disabled={cart.length === 0}
+                                className="w-full py-4 rounded-2xl font-extrabold text-sm bg-brand-800 text-white shadow-xl hover:bg-brand-900 transition-all disabled:opacity-50"
+                            >
+                                ⚡ Bayar & Potong Stok
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Profile & Settings Tab
+        function ProfileTab({ profile, scriptUrl, backendUrl, setBackendUrl, updateProfileState, showToast, syncToSpreadsheet, isSyncing, userToken, setAuthModal }) {
+            const [tempProfile, setTempProfile] = useState(profile);
+            const [urlInput, setUrlInput] = useState(scriptUrl);
+            const [jwtServerInput, setJwtServerInput] = useState(backendUrl);
+
+            useEffect(() => {
+                setTempProfile(profile);
+                setUrlInput(scriptUrl);
+                setJwtServerInput(backendUrl);
+            }, [profile, scriptUrl, backendUrl]);
+
+            const handleLogoUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => setTempProfile({ ...tempProfile, logo: reader.result });
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handleSaveProfile = (e) => {
+                e.preventDefault();
+                setBackendUrl(jwtServerInput);
+                localStorage.setItem('jwt_backend_url', jwtServerInput);
+                updateProfileState(tempProfile, urlInput);
+                showToast('Profil bisnis & konfigurasi JWT Backend berhasil disimpan!');
+            };
+
+            return (
+                <div className="max-w-2xl mx-auto space-y-8">
+                    {!userToken && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-3xl p-6 text-amber-900 flex items-center justify-between">
+                            <div>
+                                <h4 className="font-extrabold text-sm">🔑 Mode Lokal (Belum Login JWT)</h4>
+                                <p className="text-xs text-amber-700 mt-0.5">Login dengan JWT Token agar data kamu bisa diakses dari HP & Laptop secara online melalui server backend sendiri.</p>
+                            </div>
+                            <button
+                                onClick={() => setAuthModal({ isOpen: true, isRegister: false, email: '', password: '' })}
+                                className="bg-brand-800 text-white text-xs font-bold px-4 py-2.5 rounded-2xl shadow-sm hover:bg-brand-900 transition-all whitespace-nowrap ml-4"
+                            >
+                                Login JWT
+                            </button>
+                        </div>
+                    )}
+
+                    <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
+                        <h2 className="text-xl font-extrabold text-brand-800 mb-6">⚙️ Edit Profil & Konfigurasi JWT Backend</h2>
+                        <form onSubmit={handleSaveProfile} className="space-y-6">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Foto / Logo Bisnis</label>
+                                <div className="flex items-center gap-4">
+                                    <img src={tempProfile.logo} className="w-16 h-16 rounded-2xl object-cover ring-2 ring-brand-800" />
+                                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="text-xs text-slate-500 file:py-2 file:px-4 file:rounded-xl file:border-0 file:bg-brand-800 file:text-white cursor-pointer" />
+                                </div>
+                            </div>
+                            <input type="text" required placeholder="Nama Usaha" value={tempProfile.name} onChange={(e) => setTempProfile({ ...tempProfile, name: e.target.value })} className="w-full bg-slate-50 border rounded-2xl px-4 py-3 text-sm" />
+                            <input type="text" placeholder="Tagline Usaha" value={tempProfile.tagline} onChange={(e) => setTempProfile({ ...tempProfile, tagline: e.target.value })} className="w-full bg-slate-50 border rounded-2xl px-4 py-3 text-sm" />
+                            
+                            <hr />
+
+                            <div>
+                                <h3 className="text-base font-bold text-brand-800 mb-1">🌐 URL Server Node.js JWT Backend</h3>
+                                <p className="text-xs text-slate-500 mb-2">Alamat server backend Node.js (misal: `http://localhost:5000` atau URL VPS kamu).</p>
+                                <input type="url" placeholder="http://localhost:5000" value={jwtServerInput} onChange={(e) => setJwtServerInput(e.target.value)} className="w-full bg-slate-50 border rounded-2xl px-4 py-3 text-xs font-mono" />
+                            </div>
+
+                            <div>
+                                <h3 className="text-base font-bold text-brand-800 mb-1">📊 Google Spreadsheet Web App URL</h3>
+                                <input type="url" placeholder="https://script.google.com/macros/s/..." value={urlInput} onChange={(e) => setUrlInput(e.target.value)} className="w-full bg-slate-50 border rounded-2xl px-4 py-3 text-xs" />
+                            </div>
+
+                            <div className="flex justify-between items-center pt-4">
+                                <button type="button" onClick={() => syncToSpreadsheet()} disabled={isSyncing} className="bg-emerald-600 text-white font-bold px-5 py-2.5 rounded-2xl text-xs">{isSyncing ? '⏳ Syncing...' : 'Test Sync Spreadsheet'}</button>
+                                <button type="submit" className="bg-brand-800 text-white font-bold px-6 py-3 rounded-2xl text-sm">Simpan Perubahan</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        const container = document.getElementById('root');
+        const root = ReactDOM.createRoot(container);
+        root.render(<App />);
+    </script>
+</body>
+</html>
