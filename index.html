@@ -403,7 +403,7 @@
                                 <span>⏳</span> Menyarad data terbaru dari Google Sheets...
                             </div>
                         )}
-                        {activeTab === 'dashboard' && <DashboardTab menus={menus} transactions={transactions} profile={profile} />}
+                        {activeTab === 'dashboard' && <DashboardTab menus={menus} transactions={transactions} profile={profile} updateTransactionsState={updateTransactionsState} showToast={showToast} />}
                         {activeTab === 'menu' && <MenuTab menus={menus} setMenus={updateMenusState} showToast={showToast} />}
                         {activeTab === 'pos' && <PosTab menus={menus} setMenus={updateMenusState} transactions={transactions} setTransactions={updateTransactionsState} showToast={showToast} />}
                         {activeTab === 'profile' && <ProfileTab profile={profile} scriptUrl={scriptUrl} backendUrl={backendUrl} setBackendUrl={setBackendUrl} updateProfileState={updateProfileState} showToast={showToast} syncToSpreadsheet={syncToSpreadsheet} isSyncing={isSyncing} userToken={userToken} setAuthModal={setAuthModal} />}
@@ -475,18 +475,22 @@
 
                     {/* Footer */}
                     <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 font-medium">
-                        <p>© 2026 {profile.name} — Aplikasi kasir coffeholich ( rizky afriza ) ☕✨</p>
+                        <p>© 2026 {profile.name} — Aplikasi Kasir coffeholich (rizaae) ☕✨</p>
                     </footer>
                 </div>
             );
         }
 
         // ==================== DASHBOARD TAB ====================
-        function DashboardTab({ menus, transactions, profile }) {
+        function DashboardTab({ menus, transactions, profile, updateTransactionsState, showToast }) {
             const now = new Date();
             const todayStr = now.toDateString();
             const currentMonth = now.getMonth();
             const currentYear = now.getFullYear();
+
+            // Selection state for batch deletion
+            const [selectedTrxIds, setSelectedTrxIds] = useState([]);
+            const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
             // Daily Stats
             const todayTransactions = transactions.filter(t => new Date(t.date).toDateString() === todayStr);
@@ -516,6 +520,32 @@
             const bestSellers = Object.entries(itemCounts)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 5);
+
+            // Checkbox handlers for batch deletion
+            const handleSelectTrx = (id) => {
+                if (selectedTrxIds.includes(id)) {
+                    setSelectedTrxIds(selectedTrxIds.filter(item => item !== id));
+                } else {
+                    setSelectedTrxIds([...selectedTrxIds, id]);
+                }
+            };
+
+            const handleSelectAll = () => {
+                if (selectedTrxIds.length === transactions.length) {
+                    setSelectedTrxIds([]);
+                } else {
+                    setSelectedTrxIds(transactions.map(t => t.id));
+                }
+            };
+
+            const handleConfirmDeleteSelected = () => {
+                if (selectedTrxIds.length === 0) return;
+                const updatedTransactions = transactions.filter(t => !selectedTrxIds.includes(t.id));
+                updateTransactionsState(updatedTransactions);
+                showToast(`${selectedTrxIds.length} transaksi berhasil dihapus!`);
+                setSelectedTrxIds([]);
+                setDeleteModalOpen(false);
+            };
 
             return (
                 <div className="space-y-8">
@@ -602,36 +632,92 @@
                             )}
                         </div>
 
-                        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
-                            <h3 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-                                🧾 Riwayat Transaksi Terakhir
-                            </h3>
-                            {transactions.length === 0 ? (
-                                <p className="text-slate-400 text-sm py-4">Belum ada transaksi.</p>
-                            ) : (
-                                <div className="space-y-4">
-                                    {transactions.slice(0, 5).map(trx => (
-                                        <div key={trx.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-bold text-slate-900 text-sm">{trx.id}</span>
-                                                    {trx.discountAmount > 0 && (
-                                                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 font-bold">
-                                                            Diskon -Rp {trx.discountAmount.toLocaleString('id-ID')}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <p className="text-xs text-slate-500 mt-1">
-                                                    {trx.items.map(i => `${i.qty}x ${i.name}`).join(', ')}
-                                                </p>
-                                            </div>
-                                            <span className="font-extrabold text-brand-800 text-base">Rp {trx.total.toLocaleString('id-ID')}</span>
+                        {/* Recent Transactions with Multi-delete */}
+                        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                            <div>
+                                <div className="flex flex-wrap items-center justify-between gap-2 mb-6">
+                                    <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                        🧾 Riwayat Transaksi
+                                    </h3>
+                                    {transactions.length > 0 && (
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={handleSelectAll}
+                                                className="text-xs font-bold text-brand-800 bg-brand-50 hover:bg-brand-100 px-3 py-1.5 rounded-xl transition-all"
+                                            >
+                                                {selectedTrxIds.length === transactions.length ? 'Batal Semua' : 'Pilih Semua'}
+                                            </button>
+                                            {selectedTrxIds.length > 0 && (
+                                                <button
+                                                    onClick={() => setDeleteModalOpen(true)}
+                                                    className="text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 px-3 py-1.5 rounded-xl transition-all shadow-sm flex items-center gap-1"
+                                                >
+                                                    🗑️ Hapus ({selectedTrxIds.length})
+                                                </button>
+                                            )}
                                         </div>
-                                    ))}
+                                    )}
                                 </div>
-                            )}
+
+                                {transactions.length === 0 ? (
+                                    <p className="text-slate-400 text-sm py-4">Belum ada transaksi.</p>
+                                ) : (
+                                    <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                                        {transactions.map(trx => {
+                                            const isSelected = selectedTrxIds.includes(trx.id);
+                                            return (
+                                                <div 
+                                                    key={trx.id} 
+                                                    onClick={() => handleSelectTrx(trx.id)}
+                                                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                                                        isSelected ? 'bg-brand-50 border-brand-800 ring-1 ring-brand-800' : 'bg-slate-50 border-slate-100 hover:border-slate-300'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={() => {}}
+                                                            className="w-4 h-4 rounded text-brand-800 focus:ring-brand-800 cursor-pointer"
+                                                        />
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-slate-900 text-sm">{trx.id}</span>
+                                                                {trx.discountAmount > 0 && (
+                                                                    <span className="text-[10px] px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 font-bold">
+                                                                        Diskon -Rp {trx.discountAmount.toLocaleString('id-ID')}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-xs text-slate-500 mt-0.5">
+                                                                {trx.items.map(i => `${i.qty}x ${i.name}`).join(', ')}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <span className="font-extrabold text-brand-800 text-sm whitespace-nowrap">Rp {trx.total.toLocaleString('id-ID')}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
+
+                    {/* Modal Confirm Batch Delete */}
+                    {deleteModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl text-center">
+                                <span className="text-4xl block mb-2">🗑️</span>
+                                <h3 className="text-lg font-extrabold text-slate-900">Hapus {selectedTrxIds.length} Transaksi?</h3>
+                                <p className="text-xs text-slate-500 mt-1">Yakin ingin menghapus transaksi yang dipilih? Data transaksi di spreadsheet juga akan disinkronkan kembali.</p>
+                                <div className="flex items-center justify-center gap-3 mt-6">
+                                    <button onClick={() => setDeleteModalOpen(false)} className="px-5 py-2.5 rounded-2xl text-xs font-bold text-slate-600 bg-slate-100">Batal</button>
+                                    <button onClick={handleConfirmDeleteSelected} className="px-5 py-2.5 rounded-2xl text-xs font-bold text-white bg-rose-600 shadow-md">Ya, Hapus</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
